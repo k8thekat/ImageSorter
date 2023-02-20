@@ -144,16 +144,19 @@ def BulkDelete(list,reply):
 
 # Folder Directory Creation
 def ImageDirCreation(pathout):
-    ImageResolutions = [{"name": "Low Res", "dimensions": (1440,900)}, 
+    #global search_folders
+    ImageResolutions = [{"name": "Low Res", "dimensions": (1440, 900)}, 
                         {"name": "Mid Res", "dimensions":  (1920, 1440)},
                         {"name": "High Res", "dimensions":  (2560, 1600)},
                         {"name": "UHD Res", "dimensions":  (3840, 2160)},
                         {"name": "Phone Res", "dimensions":  (1080, 2400)},
-                        {"name": "UHDP Res", "dimensions":(0,0)}]
+                        {"name": "UHDP Res", "dimensions": (7680, 4320)}] 
 
     # Resolution folder creation
+    #search_folders = []
     for entry in ImageResolutions:
         if not os.path.exists(pathout + entry["name"]):
+            #search_folders.append(entry['name'])
             os.makedirs(pathout + entry["name"])
             print(entry["name"] + " folder created!")
         else:
@@ -205,13 +208,18 @@ def FileHashCompare(pathin,hashlist):
     return hashlist
 
 # Organizes Photos into Directories
-def FileSorting(pathin,imageres,pathout):
+def FileSorting(pathin, imageres, pathout):
     alist = os.listdir(pathin)
     for entry in alist:
         # directory check 
         if os.path.isdir(pathin + entry):
-            #print("Found " + entry + " directory; skipping~")
+            print("Found " + entry + " directory; skipping~")
             continue
+
+        # if os.path.basename(pathin) not in search_folders:
+        #     #['Naughty', 'Videos', 'Unwanted', 'Fix Me']:
+        #     continue
+
         # ignore .ini files (picasa file sorter/similar)
         if entry.lower().endswith(".ini"):
             #print("Found .ini file; skipping~")
@@ -223,8 +231,10 @@ def FileSorting(pathin,imageres,pathout):
         Found = False
         try:
             im = Image.open(pathin + entry)
+            #imageres is the dictionary with all dimensions
             for move in range(0, len(imageres) - 1): # range function starts at X value and ends at Y-1 (range(X,Y-1)) count = interation value
-                imagewidth,imageheight = imageres[move]["dimensions"] # value 1, value 2 = IMGRES[int][dictionary key]
+                imagewidth, imageheight = imageres[move]["dimensions"] # value 1, value 2 = IMGRES[int][dictionary key]
+                #if 1440 >= im.width(opened image) and 900 >= im.height(opened image)
                 if (imagewidth >= im.width) and (imageheight >= im.height):
                     Found = True
                     break
@@ -234,7 +244,7 @@ def FileSorting(pathin,imageres,pathout):
 
         # if image doesn't fit any dictionary values place in UHDP folder
         if(not Found):
-            move = len(imageres) - 1
+            continue
 
         # file moving to new location via os.rename(source, new) function
         # if duplicate file exists; compare via hashlib.sha256 in binary format
@@ -261,6 +271,11 @@ def FileSorting(pathin,imageres,pathout):
                     filenum += 1   
                 print("Duplicate file name found at " + fileoutname + " --> Renaming file..." + fileoutname[0:dotloc] + str(filenum) + fileoutname[dotloc:])
                 shutil.move(pathin + entry, fileoutname[0:dotloc] + str(filenum) + fileoutname[dotloc:])
+
+        except PermissionError as e:
+            print(f'Permission Error - Skipping File - {e} ')
+            continue
+        
         print( im.width, "X", im.height, "|", entry, ">> " + imageres[move]["name"] + " >>", fileoutname)
     return
 
@@ -277,7 +292,7 @@ def main():
 
     pathin = UserDirectory(setlastdir,'source','Source directory (lastdir: ' + str(setlastdir[0]['Source']) + '): ')
     pathout = UserDirectory(setlastdir,'output', 'Destination directory (lastdir: ' + str(setlastdir[1]['Output']) + '): ')
-    imagefolders = ImageDirCreation(pathout)
+    imagefolders = ImageDirCreation(pathout) #This has my Image Resolution dict
     FileSorting(pathin,imagefolders,pathout)
 
 
