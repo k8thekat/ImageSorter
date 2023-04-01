@@ -36,10 +36,10 @@ class ImageFilter_WS():
     def __file_list(self):
         listing = pathlib.Path(self._source_path).iterdir()
         for file in listing:
-            if file.is_file:
+            if file.is_file():
                 self.__image_scale_check(file)
 
-            if file.is_dir:
+            if file.is_dir():
                 #Ignore our self._destination_path if it is in the same directory as self._source_path.
                 if str(file.absolute()) == self._destination_path:
                     continue
@@ -47,18 +47,19 @@ class ImageFilter_WS():
                 for suffix in self._file_suffixes:
                     #end in `png/jpeg/jpg/webp`
                     file_list = file.glob(("*" + suffix))
-
-                    for file in file_list:
-                        self.__image_scale_check(file)
+                    for sub_file in file_list:
+                        self.__image_scale_check(sub_file)
                 
     def __image_scale_check(self, file: pathlib.Path):
         #ingore anything with `.trashed` at the start
         if file.name.lower().startswith(self._file_prefixes) or not file.name.lower().endswith(self._file_suffixes):
             return
+        
         #We open the image and check its width/height.
         opened_image = Image.open(file.as_posix())
         #If its scale factor doesn't meet my min requirements, skip.
-        if opened_image.width/opened_image.height < self._scale_factor:
+        if (opened_image.width/opened_image.height) < self._scale_factor:
+            opened_image.close()
             return
 
         #Close the image so we dont get a file access error.
