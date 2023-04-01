@@ -150,7 +150,7 @@ def ImageDirCreation(pathout):
                         {"name": "High Res", "dimensions":  (2560, 1600)},
                         {"name": "UHD Res", "dimensions":  (3840, 2160)},
                         {"name": "Phone Res", "dimensions":  (1080, 2400)},
-                        {"name": "UHDP Res", "dimensions": (7680, 4320)}] 
+                        {"name": "UHDP Res", "dimensions": (9000, 9000)}] 
 
     # Resolution folder creation
     #search_folders = []
@@ -226,13 +226,12 @@ def FileSorting(pathin, imageres, pathout):
             continue
         if entry.lower().endswith(".db"):
             continue
-
         # image sorting via dictionary dimensions comparison" > = GREATER THAN | < = LESS THAN "
         Found = False
         try:
             im = Image.open(pathin + entry)
             #imageres is the dictionary with all dimensions
-            for move in range(0, len(imageres) - 1): # range function starts at X value and ends at Y-1 (range(X,Y-1)) count = interation value
+            for move in range(0, len(imageres)): # range function starts at X value and ends at Y-1 (range(X,Y-1)) count = interation value
                 imagewidth, imageheight = imageres[move]["dimensions"] # value 1, value 2 = IMGRES[int][dictionary key]
                 #if 1440 >= im.width(opened image) and 900 >= im.height(opened image)
                 if (imagewidth >= im.width) and (imageheight >= im.height):
@@ -245,7 +244,6 @@ def FileSorting(pathin, imageres, pathout):
         # if image doesn't fit any dictionary values place in UHDP folder
         if(not Found):
             continue
-
         # file moving to new location via os.rename(source, new) function
         # if duplicate file exists; compare via hashlib.sha256 in binary format
         fileoutname = pathout + imageres[move]["name"] + "/" + entry
