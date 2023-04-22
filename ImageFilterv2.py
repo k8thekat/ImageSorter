@@ -7,309 +7,392 @@ import hashlib
 import shutil
 import json
 from pathlib import Path
+from io import TextIOWrapper
+import logging
+from typing import Union, TypedDict, Generator
+from configparser import ConfigParser
+from argparse import ArgumentParser, Namespace
+import sys
 
-# Default Settings 
-def DefaultSettings():
-    # Directory Settings
-    source = destination = hashdir = str(Path(__file__).parent.absolute())
-    #Default Settings for Directories List
-    directories = [{'Source' : source},
-                {'Output' : destination},
-                {'lastHash' : hashdir}]
-    return directories
 
-# Script Load Settings
-def LoadSettings(filewd,setfile):
-    try:    
-        if os.path.isfile(filewd + setfile) != True:
-            newfile = open(filewd + setfile, 'x')
-            lastdir = DefaultSettings()
-            newfile.close()
-            return lastdir
+class ImageRes(TypedDict):
+    """`name: str` \n
+    `dimensions: tuple[int, int]`"""
+    name: str
+    dimensions: tuple[int, int]
+
+
+class ImageFilter():
+    def __init__(self) -> None:
+        parser = ArgumentParser(description="Python Image Filter")
+        parser.add_argument("-f", help="The path to your settings.ini", required=False, type=Path)  # TODO Need to decide on action
+        self._args: Namespace = parser.parse_args()
+
+        logging.basicConfig(format="%(asctime)s [%(levelname)s]  %(message)s", level=logging.INFO, datefmt='%m/%d/%Y %I:%M:%S %p', handlers=[logging.StreamHandler(sys.stdout)])
+        self._logger = logging.getLogger()
+
+        self._ImageResolutions: list[ImageRes] = [
+            {"name": "Low Res", "dimensions": (1440, 900)},
+            {"name": "Mid Res", "dimensions": (1920, 1440)},
+            {"name": "High Res", "dimensions": (2560, 1600)},
+            {"name": "UHD Res", "dimensions": (3840, 2160)},
+            {"name": "UHDP Res", "dimensions": (9000, 9000)},
+            {"name": "Phone Res", "dimensions": (1080, 2400)}]
+
+        # default directories
+        self._source_dir: Path
+        self._destination_dir: Path
+        self._directories: dict[str, str] = {
+            "_source_dir": "Source directory:",
+            "_destination_dir": "Destination directory:"}
+
+        # util
+        self._hash_file: Path = Path.cwd().joinpath("hashdatabase.json")
+        self._temp_hash_list: dict[str, str] = {}  # {"b7abe0e999528837a9588bdf82f37183262b9f0775772491468a78107c285d96": "h:\\picture\\anime\\037533e1272fd9f6fd860abac4c5f1c3.png"}
+        self._duplicate_images: list[Path] = []
+
+        # sort settings
+        self._sort_wallpapers: bool = False
+        self._sort_recursive: bool = False
+        self._hash_pictures: bool = False
+        self._settings: dict[str, str] = {
+            "_sort_wallpapers": "Would you like to seperate Wallpaper sized pictures into their own folder? 'y/N' (default: N): ",
+            "_sort_recursive": "Would you like the search to recursive? 'y/N' (default: N): ",
+            "_hash_pictures": "Would you like to check for duplicate images? 'y/N' (default: N): "}
+
+        # these settings will be changed via `settings.ini`
+        self._file_types: tuple[str, ...] = (".png", ".jpg", ".webp", ".jpeg")
+        self._ignore_directories: list[str] | str = ["Low Res", "Mid Res", "High Res", "UHD Res", "Phone Res", "UHDP Res", "Wallpapers"]
+        self._scale_factor: float = 1.3
+
+        self._use_default: bool = True  # default to prompts always..
+        if self._args.f:
+            # TODO -- When using settings.ini -- Fails to sort and or find any images.
+            self._load_settings()
+
+        # prompt setting change (if no file)
+        if self._use_default:
+            self._user_settings_prompts()
+            self._user_directory_prompts()
+
+        self._image_dir_creation()
+        if self._hash_pictures:
+            self._hash_database_load()
+
+        self._image_sort(self._image_list_generator())
+
+        # done sorting; so lets prompt our duplicate deletion.
+        if len(self._duplicate_images) > 5:
+            self._delete(bulk=True)
         else:
-            jsonfile = open(filewd + setfile)
-            lastdir = json.load(jsonfile) 
-            print("settings loaded")
-            return lastdir
-    except json.decoder.JSONDecodeError:
-        lastdir = DefaultSettings()
-    return lastdir
+            self._delete()
 
-# Script Save Settings 
-def SaveSettings(pathin,pathout,filewd,setfile,hashdir): 
-    #list of dictionaries for settings
-    directories = [{'Source' : pathin},
-                {'Output' : pathout},
-                {'lastHash' : hashdir}]
-    newfile = open(filewd + setfile, 'w')
-    print("settings saved")
-    json.dump(directories,newfile)
-    newfile.close()
-    return directories
+        self._hash_database_save()
+        self._logger.info("Finished sorting...")
 
-# Hash List Load
-def HashDatabaseLoad(hashfile,filewd):
-    try:    
-        if os.path.isfile(filewd + hashfile) != True:
-            newfile = open(filewd + hashfile, 'x')
-            hashlist = {}
-            newfile.close()
+    def _load_settings(self) -> None:
+        """If the user passed in a `settings.ini` to the `-f` arg; this will load the settings. 
+
+        If successful; sets `self._use_default = False`"""
+        self._setting_file: Path = Path(self._args.f)
+
+        # this check does two things; verifys the path exists and the file exists.
+        if self._setting_file.is_file():
+            # open config file
+            settings = ConfigParser(converters={"list": lambda setting: [value.strip() for value in setting.split(",")]})
+            # read config file
+            settings.read(self._setting_file.as_posix())
+            # directories
+            self._source_dir = Path(settings.get("DIRECTORIES", "SOURCE"))
+            self._destination_dir = Path(settings.get("DIRECTORIES", "DESTINATION"))
+            # need to validate SOURCE and DESTINATION
+            if not self._source_dir.exists():
+                self._logger.error("The SOURCE path you provided is not valid.")
+                sys.exit(1)
+            if not self._destination_dir.exists():
+                self._logger.error("The DESTINATION path you provided is not valid.")
+                sys.exit(1)
+
+            # wallpapers
+            self._sort_wallpapers = settings.getboolean("WALLPAPERS", "SORT")
+            self._scale_factor = settings.getfloat("WALLPAPERS", "SCALE_FACTOR")
+
+            # settings
+            self._sort_recursive = settings.getboolean("SETTINGS", "RECURSIVE")
+            self._hash_pictures = settings.getboolean("SETTINGS", "HASH")
+            self._file_types = tuple(settings.get("SETTINGS", "FILE_TYPES"))
+            self._ignore_directories = settings.get("SETTINGS", "IGNORE_DIR")
+
+            self._use_default = False
+            self._logger.info("Finished loading settings.ini")
+
+        else:  # If the file doesn't exist or is improper; use default settings.
+            self._logger.error("Failed to load Settings; reverting to default Settings.")
+
+    def _user_directory_prompts(self) -> None:
+        """Prompt for user input of Source/Destination directories"""
+        for key, value in self._directories.items():
+            while 1:
+                user_choice: str = input(value)
+                # if no entry; exit..
+                if len(user_choice) == 0:
+                    self._logger.critical("Exiting...")
+                    sys.exit(1)
+
+                # validate the path
+                if Path(user_choice.strip()).exists():
+                    self.__setattr__(key, Path(user_choice.strip()))
+                    break
+                else:
+                    self._logger.error("Directory does not exist; please re-enter.")
+
+    def _user_settings_prompts(self) -> None:
+        """Prompts configuration choices to determin how to sort.
+
+        `self._sort_wallpapers: bool = False`
+        `self._sort_recursive: bool = False`
+        `self._hash_pictures: bool = False`
+        """
+        for key, value in self._settings.items():
+            while 1:
+                user_choice: str = input(value)
+                # if no entry; use default and break to next entry.
+                if len(user_choice) == 0:
+                    break
+
+                elif user_choice.lower() == "y":
+                    self.__setattr__(key, True)
+                    break
+
+                # if the results DON'T match y or n; prompt again.
+                elif not user_choice.lower() == "n":
+                    self._logger.error("Your entry was invalid; please select between (y/N)")
+
+    def _image_dir_creation(self) -> None:
+        """ Creates Directories based upon `self._ImageResolutions` "name" field."""
+        for entry in self._ImageResolutions:
+            cur_path: Path = self._destination_dir.joinpath(entry["name"])
+            if not cur_path.exists():
+                cur_path.mkdir()
+                self._logger.info(entry["name"] + " folder created!")
+
+        if self._sort_wallpapers:
+            cur_path: Path = self._destination_dir.joinpath("Wallpapers")
+            if not cur_path.exists():
+                cur_path.mkdir()
+                self._logger.info("Wallpapers folder created!")
+
+    def _image_list_generator(self) -> list[Path]:
+        """Creates a list of Path objects of all images that match `self._file_types`.
+
+        IF `self._sort_recursive == True` it will also `glob` all matching `file_types` of sub directories."""
+        _image_list: list = []
+        for file in self._source_dir.iterdir():
+            if file.is_file() and file.name.lower().endswith(self._file_types):
+                _image_list.append(file)
+
+            if file.is_dir():
+                # Ignore our self._destination_path if it is in the same directory as self._source_path.
+                if str(file.absolute()) == self._destination_dir or file.name in self._ignore_directories:
+                    # self._logger.warn(f"Found an unwanted directory {file.name}; skipping~")
+                    continue
+
+                if self._sort_recursive:
+                    for suffix in self._file_types:
+                        file_list: Generator[Path, None, None] = file.glob(("*" + suffix))
+                        for sub_file in file_list:
+                            _image_list.append(sub_file)
+
+        return _image_list
+
+    def _image_sort(self, image_list: list[Path]) -> None:
+        """Sorts images into their respective resolution boundaries specified by `self._ImageResolutions` or into a `Wallpaper` folder if enabled."""
+        move: int = 0
+        cur_image: Union[Image.Image, None] = None
+        imagewidth: int
+        imageheight: int
+        self._logger.info(f"Found {len(image_list)} images to sort...")
+        for image in image_list:
+            _output_dir: Path = self._destination_dir
+            _wallpaper: bool = False
+            cur_image_hash: str = hashlib.sha256(open(self._source_dir.joinpath(image.name).as_posix(), "rb").read()).hexdigest()
+            try:
+                cur_image = Image.open(image)
+
+            except Exception as e:
+                self._logger.error(f"We encountered an error opening {image.name} | Exception: {e}")
+                continue
+
+            # image sorting of wallpapers
+            if self._sort_wallpapers:
+                if (cur_image.width / cur_image.height) > self._scale_factor:
+                    # Close the image so we dont get a file access error.
+                    cur_image.close()
+                    _output_dir = self._destination_dir.joinpath("Wallpapers")
+                    _wallpaper = True
+
+            # image sorting via dictionary dimensions comparison" > = GREATER THAN | < = LESS THAN "
+            if not _wallpaper:
+                # imageres is the dictionary with all dimensions
+                # range function starts at X value and ends at Y-1 (range(X,Y-1)) count = interation value
+                # value 1, value 2 = IMGRES[int][dictionary key]
+                # if value 1 >= cur_image.width(opened image) and value 2 >= cur_image.height(opened image)
+                for move in range(0, len(self._ImageResolutions)):
+                    imagewidth, imageheight = self._ImageResolutions[move]["dimensions"]
+                    if not (imagewidth >= cur_image.width) and not (imageheight >= cur_image.height):
+                        cur_image.close()
+                        continue
+
+                    else:
+                        cur_image.close()
+                        _output_dir = self._destination_dir.joinpath(self._ImageResolutions[move]["name"])
+
+            if self._hash_pictures:
+                if cur_image_hash not in self._temp_hash_list:
+                    self._temp_hash_list[cur_image_hash] = _output_dir.joinpath(image.name).as_posix()
+                else:
+                    self._validate_file_hash(image, cur_image_hash, _output_dir.joinpath(image.name))
+
+            # Move our image to the destination path we set.
+            try:
+                shutil.move(image.as_posix(), _output_dir)
+                self._logger.info(f'Moved {image.name} | {self._source_dir.as_posix()} >> {_output_dir.as_posix()}')
+
+            except shutil.Error as e:
+                # we only care about duplicate file/path issues.
+                if isinstance(e.args[0], str) and e.args[0].startswith("Destination path"):
+                    # This typically triggers if the image failed the _validate_file_hash.
+                    if image in self._duplicate_images:
+                        continue
+
+                    _image_output: str = _output_dir.joinpath(image.name).as_posix()
+                    # file hash comparison => open(file), "rb" = read binary , read file and digest = hash results
+                    file2hash: str = hashlib.sha256(open(_image_output, "rb").read()).hexdigest()
+
+                    if cur_image_hash == file2hash:
+                        self._duplicate_images.append(image)
+                        continue
+
+                    else:
+                        _num_increment: int = 1
+                        _file_output: str = _output_dir.as_posix() + "/" + image.stem + "_" + str(_num_increment) + image.suffix
+                        while (Path(_file_output).exists()):
+                            _num_increment += 1
+
+                        new_image: Path = image.rename(_file_output)
+                        self._logger.warning("Duplicate file name found at " + _image_output + " --> Renaming file..." + new_image.name)
+                        # shutil.move(self._source_dir.as_posix() + file.name, fileoutname[0:dotloc] + str(filenum) + fileoutname[dotloc:])
+                else:
+                    self._logger.error(f"We encountered an error moving {image.name} | Exception: {e}")
+
+            except PermissionError as e:
+                self._logger.error(f"We encountered a Permissions Error when moving {image.name} | Exception: {e}")
+
+    def _hash_database_load(self) -> None:
+        """Loads our `hashdatabase.json` if it exists; otherwise creates the file in the current working directory."""
+        temp_file: TextIOWrapper
+        if self._hash_file.exists():
+            temp_file = open(self._hash_file)
+
+            try:
+                self._temp_hash_list = json.load(temp_file)
+            except json.decoder.JSONDecodeError as e:
+                self._logger.error(f"We encountered a Decode Error when loading hashdatabase.json | Exception: {e}")
+                temp_file.close()
+                return
+
+            temp_file.close()
+            self._logger.info("loaded hashdatabase.json")
+
         else:
-            jsonfile = open(filewd + hashfile)
-            hashlist = json.load(jsonfile) 
-            print("hashlist loaded")  
-    except json.decoder.JSONDecodeError:
-        hashlist = {}
-    return hashlist
+            temp_file = open(self._hash_file, "x")
+            temp_file.close()
+            self._logger.warning("Unable to find hashdatabase.json, creating the database.")
 
-# Hash List Save
-def HashDatabaseSave(filewd,hashfile,hashlist):
-    newfile = open(filewd + hashfile, 'w') # w = overwrite
-    #saves my hash list to a new file with each entry spaced out by a new line.
-    json.dump(hashlist,newfile,indent="\n")
-    newfile.close()
-    print("hashlist saved")
-    return
+    def _hash_database_save(self) -> None:
+        """Hash List Save"""
+        temp_file: TextIOWrapper = open(self._hash_file, 'w')  # w = overwrite
+        # saves my hash list to a new file with each entry spaced out by a new line.
+        try:
+            json.dump(self._temp_hash_list, temp_file, indent="\n")
+        except Exception as e:
+            self._logger.error(f"We encountered an Error when saving our hashdatabase.json | Exception: {e}")
+            temp_file.close()
+            return
 
-# Prompt for User Input of working directory
-def UserDirectory(setlastdir,location,reply):
-    path = input(reply)
-    path = path.lower()
-
-    # if length of input is 0 then set path to defaultpath.
-    if len(path) == 0 and location == 'source': 
-        path = setlastdir[0]['Source']
-        return path
-      
-    if len(path) == 0 and location == 'output':
-        path = setlastdir[1]['Output']
-        return path
-
-    if len(path) == 0 and location == 'hash':
-        path = setlastdir[2]['lastHash']
-        return path
-    
-    while os.path.exists(path) != True:
-        print("Directory does not exist; please re-enter.")
-        path = input(reply)
-    
-    if location == 'hash':
-        return path
-
-    # appends "/" to end of path if not there.
-    if path[-1] not in ['\\', '/']: 
-        path += '/' 
-    return path
-
-# Delete Confirmation Request
-def DeleteFile(pathin, entry,use,reply):
-    default_answer = "n"
-    confirm = input(reply)
-    confirm = confirm.lower()
-    if len(confirm) == 0:
-        confirm = default_answer
-    
-    if use == 'hash' and confirm == 'y':
-        os.remove(entry)
-        print("Duplicate hash entry found, deleting file :" + entry)
+        temp_file.close()
+        self._logger.info("Saved hashdatabase.json")
         return
 
-    if confirm == "y":
-        os.remove(pathin + entry)
-        print("FileExistsError: Duplicate file found, deleting file :" + pathin + entry)
-        return 
+    def _delete(self, bulk: bool = False) -> None:
+        """ Prompts users with a choice to delete images from `self._duplicate_images`"""
+        _confirm: str = "n"
+        _exit: bool = False
+        _count: int = len(self._duplicate_images)
+        self._logger.info(f"Found {_count} duplicate images...")
 
-    else:
-        print("Skipping deletion...")
+        for image in self._duplicate_images:
+            reply: str = "Delete duplicate file? " + self._source_dir.joinpath(image.name).as_posix() + "(y/N)? :"
+            if _confirm == "y":
+                os.remove(image.as_posix())
+                continue
 
-    return
+            if _exit:
+                break
 
-#Bulk delete function for any provided list
-def BulkDelete(list,reply):
-    default_answer = 'n'
-    confirm = input(reply)
-    confirm = confirm.lower()
+            while 1:
+                if bulk:
+                    reply = f"Delete all {(_count)} duplicate images (y/N)? :"
 
-    #if length of confirm is 0 set to 'n'
-    if len(confirm) == 0:
-        confirm = default_answer
-
-    if confirm == 'y':
-        for entry in list:
-            os.remove(entry)
-    else:
-       print("Skipping deletion...")
-
-    return
-
-# Folder Directory Creation
-def ImageDirCreation(pathout):
-    #global search_folders
-    ImageResolutions = [{"name": "Low Res", "dimensions": (1440, 900)}, 
-                        {"name": "Mid Res", "dimensions":  (1920, 1440)},
-                        {"name": "High Res", "dimensions":  (2560, 1600)},
-                        {"name": "UHD Res", "dimensions":  (3840, 2160)},
-                        {"name": "Phone Res", "dimensions":  (1080, 2400)},
-                        {"name": "UHDP Res", "dimensions": (9000, 9000)}] 
-
-    # Resolution folder creation
-    #search_folders = []
-    for entry in ImageResolutions:
-        if not os.path.exists(pathout + entry["name"]):
-            #search_folders.append(entry['name'])
-            os.makedirs(pathout + entry["name"])
-            print(entry["name"] + " folder created!")
-        else:
-            print("Found " + entry["name"] + " directory; skipping creation")
-    return ImageResolutions
-
-# Create Hash List and Compare/ Delete duplicate on prompt.
-def FileHashCompare(pathin,hashlist):
-    comparelist = []
-    hashduplicatelist = []
-    #hashlist = []
-    # walks files, directories and  subdirectories; then appends them to a list
-    for path, subdirs, files in os.walk(pathin):
-        for name in files:
-            entry = os.path.join(path, name)
-            if os.path.isfile(entry):
-                comparelist.append(entry)  
-
-    #how many entries for hash compare it finds.  
-    print(len(comparelist))
-
-    print("Duplicate file hash check...")
-    for entry in comparelist:
-        # ignore .ini files (picasa file sorter/similar)
-        if entry.lower().endswith(".ini"):
-            continue
-
-        # file hash comparison => open(file), "rb" = read binary , read file and digest = hash results
-        filehash = hashlib.sha256(open(entry,'rb').read()).hexdigest() 
-
-        # hashlist organizing; comparies directories of the existing hash entry with the duplicate one.
-        if filehash not in hashlist:
-            hashlist[filehash] = entry
-
-        else:
-            if entry != hashlist[filehash]:
-                print("added entry " + entry)
-                hashduplicatelist.append(entry)
-
-    # bulk delete
-    for entry in hashduplicatelist:  
-        #if length of my duplicate entries is greater than 5.
-        if len(hashduplicatelist) >= 5:
-            BulkDelete(hashduplicatelist, 'Delete all '+ str(len(hashduplicatelist))+' files (y/N)?:')
-            break
-        else:
-            DeleteFile(pathin,entry,'hash',"Delete duplicate file? " + entry + "(y/N)?")
-
-    return hashlist
-
-# Organizes Photos into Directories
-def FileSorting(pathin, imageres, pathout):
-    alist = os.listdir(pathin)
-    for entry in alist:
-        # directory check 
-        if os.path.isdir(pathin + entry):
-            print("Found " + entry + " directory; skipping~")
-            continue
-
-        # if os.path.basename(pathin) not in search_folders:
-        #     #['Naughty', 'Videos', 'Unwanted', 'Fix Me']:
-        #     continue
-
-        # ignore .ini files (picasa file sorter/similar)
-        if entry.lower().endswith(".ini"):
-            #print("Found .ini file; skipping~")
-            continue
-        if entry.lower().endswith(".db"):
-            continue
-        # image sorting via dictionary dimensions comparison" > = GREATER THAN | < = LESS THAN "
-        Found = False
-        try:
-            im = Image.open(pathin + entry)
-            #imageres is the dictionary with all dimensions
-            for move in range(0, len(imageres)): # range function starts at X value and ends at Y-1 (range(X,Y-1)) count = interation value
-                imagewidth, imageheight = imageres[move]["dimensions"] # value 1, value 2 = IMGRES[int][dictionary key]
-                #if 1440 >= im.width(opened image) and 900 >= im.height(opened image)
-                if (imagewidth >= im.width) and (imageheight >= im.height):
-                    Found = True
+                confirm: str = input(reply).lower()
+                if len(confirm) == 0 or confirm == "n":
+                    if bulk:
+                        _exit = True
                     break
-            im.close()      
-        except:
-            pass
 
-        # if image doesn't fit any dictionary values place in UHDP folder
-        if(not Found):
-            continue
-        # file moving to new location via os.rename(source, new) function
-        # if duplicate file exists; compare via hashlib.sha256 in binary format
-        fileoutname = pathout + imageres[move]["name"] + "/" + entry
-        try:
-            shutil.move(pathin + entry, fileoutname)
+                elif confirm == "y":
+                    if bulk:
+                        _confirm = "y"
 
-        except FileExistsError:
-            file1hash = hashlib.sha256(open(pathin + entry,"rb").read()).hexdigest() # file hash comparison => open(file), "rb" = read binary , read file and digest = hash results
-            file2hash = hashlib.sha256(open(fileoutname,"rb").read()).hexdigest()
+                    os.remove(image.as_posix())
+                    break
 
-            # compare file1hash to file2hash
-            # if files are same; delete file in source folder
-            if file1hash == file2hash:
-                # Prompt confirmation for deletion
-                DeleteFile(pathin, entry,'sort',"Delete duplicate file? " + pathin + entry + "(y/N)?")
-            
+                elif confirm != "n":
+                    self._logger.error("Your entry was invalid; please select between 'y/N'")
+                    continue
+
+    def _validate_file_hash(self, image_dir: Path, image_hash: str, image_output_path: Path) -> None:
+        """Compares the hash of the current image against the hash of the image in the DB, also verify's the existing entry has a valid file/path. 
+
+        Hash's the existing file/path against the possible duplicate.
+
+        Adds the file to `self._diplicate_images` if the hash's match."""
+        # need to compare the new image and the old image hashs
+        # need to update the hash list if they no longer match.
+        # using the "hash" that already exists as a key to get a Path(str)
+        _existing_file: Path = Path(self._temp_hash_list[image_hash])
+
+        # if the hash path is invalid; update the hash and the path entry.
+        if not _existing_file.exists():
+            self._temp_hash_list[image_hash] = image_output_path.as_posix()
+
+        # the file path exists; compare the old image to the new one.
+        else:
+            _temp_hash: str = hashlib.sha256(open(_existing_file.as_posix(), "rb").read()).hexdigest()
+            if _temp_hash == image_hash:
+                self._duplicate_images.append(image_dir)
+
+            elif _temp_hash not in self._temp_hash_list:
+                # first we update our DB with the new hash and get its path using the old hash.
+                # then we update the old hash with a new path.
+                self._temp_hash_list[_temp_hash] = _existing_file.as_posix()
+                self._temp_hash_list[image_hash] = image_output_path.as_posix()
+
             else:
-                # duplicate file name check and renaming
-                dotloc = fileoutname.rfind(".")
-                filenum = 2
-
-                while(os.path.exists(fileoutname[0:dotloc] + str(filenum) + fileoutname[dotloc:])):
-                    filenum += 1   
-                print("Duplicate file name found at " + fileoutname + " --> Renaming file..." + fileoutname[0:dotloc] + str(filenum) + fileoutname[dotloc:])
-                shutil.move(pathin + entry, fileoutname[0:dotloc] + str(filenum) + fileoutname[dotloc:])
-
-        except PermissionError as e:
-            print(f'Permission Error - Skipping File - {e} ')
-            continue
-        
-        print( im.width, "X", im.height, "|", entry, ">> " + imageres[move]["name"] + " >>", fileoutname)
-    return
-
-# maaaaaaaaaaaaain~
-def main():
-    wd = Path(__file__).parent.absolute()
-    filewd = str(wd)
-    setfile = "\imagefilter.json"  
-    hashfile = '\hashdatabase.json'  
-
-    #Load Default Settings; override with Loaded.
-    DefaultSettings()
-    setlastdir = LoadSettings(filewd,setfile)
-
-    pathin = UserDirectory(setlastdir,'source','Source directory (lastdir: ' + str(setlastdir[0]['Source']) + '): ')
-    pathout = UserDirectory(setlastdir,'output', 'Destination directory (lastdir: ' + str(setlastdir[1]['Output']) + '): ')
-    imagefolders = ImageDirCreation(pathout) #This has my Image Resolution dict
-    FileSorting(pathin,imagefolders,pathout)
+                # TODO -- This could end up being circular; need to validate the hash's if it already exists/etc and update the fields.
+                # if the new hash is "somehow" in the DB already; perform a validation.
+                self._validate_file_hash(_existing_file, _temp_hash, image_output_path)
 
 
-    #complete hash file comparison for all files in directory
-    hash = input("hash? 'y/N' :")
-    if hash == 'y':
-        hashlist = HashDatabaseLoad(hashfile,filewd)
-        hashpath = UserDirectory(setlastdir,'hash','Folder or Directory (will scan sub-directories)(lastdir: ' + str(setlastdir[2]['lastHash']) + '): ')
-        hashcompare = FileHashCompare(hashpath,hashlist)
-        
-        HashDatabaseSave(filewd,hashfile,hashcompare)
-        SaveSettings(pathin,pathout,filewd,setfile,hashpath)
-    else:
-        SaveSettings(pathin,pathout,filewd,setfile,wd)
-        pass
-    
-
-    return 
-    
 if __name__ == "__main__":
-    print("Main Loaded")
-    main()
+    ImageFilter()

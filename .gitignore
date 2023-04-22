@@ -1,7 +1,8 @@
 /script.py
 /old
-hashdatabase.json
+/.vscode
+hashdatabase.*
 imagefilter.json
-hashdatabase.json
-hashdatabase.json.old
-hashdatabase.json
+
+/Test
+
