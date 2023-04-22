@@ -67,7 +67,6 @@ class ImageFilter():
 
         self._use_default: bool = True  # default to prompts always..
         if self._args.f:
-            # TODO -- When using settings.ini -- Fails to sort and or find any images.
             self._load_settings()
 
         # prompt setting change (if no file)
@@ -389,7 +388,6 @@ class ImageFilter():
                 self._temp_hash_list[image_hash] = image_output_path.as_posix()
 
             else:
-                # TODO -- This could end up being circular; need to validate the hash's if it already exists/etc and update the fields.
                 # if the new hash is "somehow" in the DB already; perform a validation.
                 self._validate_file_hash(_existing_file, _temp_hash, image_output_path)
 
