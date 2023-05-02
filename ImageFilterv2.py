@@ -1,34 +1,43 @@
 # Image Filter
 # By k8thekat - 4/10/2021
 
-import os
-from PIL import Image
 import hashlib
-import shutil
 import json
-from pathlib import Path
-from io import TextIOWrapper
 import logging
-from typing import Union, TypedDict, Generator
-from configparser import ConfigParser
-from argparse import ArgumentParser, Namespace
+import os
+import shutil
 import sys
+from argparse import ArgumentParser, Namespace
+from configparser import ConfigParser
+from io import TextIOWrapper
+from pathlib import Path
+from typing import Generator, TypedDict, Union
+
+from PIL import Image
 
 
 class ImageRes(TypedDict):
     """`name: str` \n
     `dimensions: tuple[int, int]`"""
+
     name: str
     dimensions: tuple[int, int]
 
 
-class ImageFilter():
+class ImageFilter:
     def __init__(self) -> None:
         parser = ArgumentParser(description="Python Image Filter")
-        parser.add_argument("-f", help="The path to your settings.ini", required=False, type=Path)  # TODO Need to decide on action
+        parser.add_argument(
+            "-f", help="The path to your settings.ini", required=False, type=Path
+        )  # TODO Need to decide on action
         self._args: Namespace = parser.parse_args()
 
-        logging.basicConfig(format="%(asctime)s [%(levelname)s]  %(message)s", level=logging.INFO, datefmt='%m/%d/%Y %I:%M:%S %p', handlers=[logging.StreamHandler(sys.stdout)])
+        logging.basicConfig(
+            format="%(asctime)s [%(levelname)s]  %(message)s",
+            level=logging.INFO,
+            datefmt="%m/%d/%Y %I:%M:%S %p",
+            handlers=[logging.StreamHandler(sys.stdout)],
+        )
         self._logger = logging.getLogger()
 
         self._ImageResolutions: list[ImageRes] = [
@@ -37,18 +46,24 @@ class ImageFilter():
             {"name": "High Res", "dimensions": (2560, 1600)},
             {"name": "UHD Res", "dimensions": (3840, 2160)},
             {"name": "UHDP Res", "dimensions": (9000, 9000)},
-            {"name": "Phone Res", "dimensions": (1080, 2400)}]
+            {"name": "Phone Res", "dimensions": (1080, 2400)},
+        ]
 
         # default directories
         self._source_dir: Path
         self._destination_dir: Path
         self._directories: dict[str, str] = {
             "_source_dir": "Source directory:",
-            "_destination_dir": "Destination directory:"}
+            "_destination_dir": "Destination directory:",
+        }
 
         # util
         self._hash_file: Path = Path.cwd().joinpath("hashdatabase.json")
-        self._temp_hash_list: dict[str, str] = {}  # {"b7abe0e999528837a9588bdf82f37183262b9f0775772491468a78107c285d96": "h:\\picture\\anime\\037533e1272fd9f6fd860abac4c5f1c3.png"}
+        self._temp_hash_list: dict[
+            str, str
+        ] = (
+            {}
+        )  # {"b7abe0e999528837a9588bdf82f37183262b9f0775772491468a78107c285d96": "h:\\picture\\anime\\037533e1272fd9f6fd860abac4c5f1c3.png"}
         self._duplicate_images: list[Path] = []
 
         # sort settings
@@ -58,11 +73,20 @@ class ImageFilter():
         self._settings: dict[str, str] = {
             "_sort_wallpapers": "Would you like to seperate Wallpaper sized pictures into their own folder? 'y/N' (default: N): ",
             "_sort_recursive": "Would you like the search to recursive? 'y/N' (default: N): ",
-            "_hash_pictures": "Would you like to check for duplicate images? 'y/N' (default: N): "}
+            "_hash_pictures": "Would you like to check for duplicate images? 'y/N' (default: N): ",
+        }
 
         # these settings will be changed via `settings.ini`
         self._file_types: tuple[str, ...] = (".png", ".jpg", ".webp", ".jpeg")
-        self._ignore_directories: list[str] | str = ["Low Res", "Mid Res", "High Res", "UHD Res", "Phone Res", "UHDP Res", "Wallpapers"]
+        self._ignore_directories: list[str] | str = [
+            "Low Res",
+            "Mid Res",
+            "High Res",
+            "UHD Res",
+            "Phone Res",
+            "UHDP Res",
+            "Wallpapers",
+        ]
         self._scale_factor: float = 1.3
 
         self._use_default: bool = True  # default to prompts always..
@@ -90,7 +114,7 @@ class ImageFilter():
         self._logger.info("Finished sorting...")
 
     def _load_settings(self) -> None:
-        """If the user passed in a `settings.ini` to the `-f` arg; this will load the settings. 
+        """If the user passed in a `settings.ini` to the `-f` arg; this will load the settings.
 
         If successful; sets `self._use_default = False`"""
         self._setting_file: Path = Path(self._args.f)
@@ -168,7 +192,7 @@ class ImageFilter():
                     self._logger.error("Your entry was invalid; please select between (y/N)")
 
     def _image_dir_creation(self) -> None:
-        """ Creates Directories based upon `self._ImageResolutions` "name" field."""
+        """Creates Directories based upon `self._ImageResolutions` "name" field."""
         for entry in self._ImageResolutions:
             cur_path: Path = self._destination_dir.joinpath(entry["name"])
             if not cur_path.exists():
@@ -214,7 +238,9 @@ class ImageFilter():
         for image in image_list:
             _output_dir: Path = self._destination_dir
             _wallpaper: bool = False
-            cur_image_hash: str = hashlib.sha256(open(self._source_dir.joinpath(image.name).as_posix(), "rb").read()).hexdigest()
+            cur_image_hash: str = hashlib.sha256(
+                open(self._source_dir.joinpath(image.name).as_posix(), "rb").read()
+            ).hexdigest()
             try:
                 cur_image = Image.open(image)
 
@@ -255,7 +281,7 @@ class ImageFilter():
             # Move our image to the destination path we set.
             try:
                 shutil.move(image.as_posix(), _output_dir)
-                self._logger.info(f'Moved {image.name} | {self._source_dir.as_posix()} >> {_output_dir.as_posix()}')
+                self._logger.info(f"Moved {image.name} | {self._source_dir.as_posix()} >> {_output_dir.as_posix()}")
 
             except shutil.Error as e:
                 # we only care about duplicate file/path issues.
@@ -274,12 +300,16 @@ class ImageFilter():
 
                     else:
                         _num_increment: int = 1
-                        _file_output: str = _output_dir.as_posix() + "/" + image.stem + "_" + str(_num_increment) + image.suffix
-                        while (Path(_file_output).exists()):
+                        _file_output: str = (
+                            _output_dir.as_posix() + "/" + image.stem + "_" + str(_num_increment) + image.suffix
+                        )
+                        while Path(_file_output).exists():
                             _num_increment += 1
 
                         new_image: Path = image.rename(_file_output)
-                        self._logger.warning("Duplicate file name found at " + _image_output + " --> Renaming file..." + new_image.name)
+                        self._logger.warning(
+                            "Duplicate file name found at " + _image_output + " --> Renaming file..." + new_image.name
+                        )
                         # shutil.move(self._source_dir.as_posix() + file.name, fileoutname[0:dotloc] + str(filenum) + fileoutname[dotloc:])
                 else:
                     self._logger.error(f"We encountered an error moving {image.name} | Exception: {e}")
@@ -310,7 +340,7 @@ class ImageFilter():
 
     def _hash_database_save(self) -> None:
         """Hash List Save"""
-        temp_file: TextIOWrapper = open(self._hash_file, 'w')  # w = overwrite
+        temp_file: TextIOWrapper = open(self._hash_file, "w")  # w = overwrite
         # saves my hash list to a new file with each entry spaced out by a new line.
         try:
             json.dump(self._temp_hash_list, temp_file, indent="\n")
@@ -324,7 +354,7 @@ class ImageFilter():
         return
 
     def _delete(self, bulk: bool = False) -> None:
-        """ Prompts users with a choice to delete images from `self._duplicate_images`"""
+        """Prompts users with a choice to delete images from `self._duplicate_images`"""
         _confirm: str = "n"
         _exit: bool = False
         _count: int = len(self._duplicate_images)
@@ -361,7 +391,7 @@ class ImageFilter():
                     continue
 
     def _validate_file_hash(self, image_dir: Path, image_hash: str, image_output_path: Path) -> None:
-        """Compares the hash of the current image against the hash of the image in the DB, also verify's the existing entry has a valid file/path. 
+        """Compares the hash of the current image against the hash of the image in the DB, also verify's the existing entry has a valid file/path.
 
         Hash's the existing file/path against the possible duplicate.
 
