@@ -1,0 +1,12 @@
+name = "ImageFilter"
+version = "2.0.0"
+authors = [
+    "k8thekat"
+]
+homepage = "https://github.com/k8thekat/ImageFilter"
+
+[tool.black.dependencies]
+python = "^3.10"
+
+[tool.black]
+line-length = 125
