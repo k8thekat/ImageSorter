@@ -214,7 +214,7 @@ class ImageFilter():
         for image in image_list:
             _output_dir: Path = self._destination_dir
             _wallpaper: bool = False
-            cur_image_hash: str = hashlib.sha256(open(self._source_dir.joinpath(image.name).as_posix(), "rb").read()).hexdigest()
+            cur_image_hash: str = hashlib.sha256(open(image.as_posix(), "rb").read()).hexdigest()
             try:
                 cur_image = Image.open(image)
 
@@ -250,7 +250,8 @@ class ImageFilter():
                 if cur_image_hash not in self._temp_hash_list:
                     self._temp_hash_list[cur_image_hash] = _output_dir.joinpath(image.name).as_posix()
                 else:
-                    self._validate_file_hash(image, cur_image_hash, _output_dir.joinpath(image.name))
+                    if self._validate_file_hash(image, cur_image_hash, _output_dir.joinpath(image.name)):
+                        continue
 
             # Move our image to the destination path we set.
             try:
@@ -259,15 +260,16 @@ class ImageFilter():
 
             except shutil.Error as e:
                 # we only care about duplicate file/path issues.
-                if isinstance(e.args[0], str) and e.args[0].startswith("Destination path"):
+                if isinstance(e.args[0], str) and e.args[0].startswith("Destination path"):  # type:ignore
                     # This typically triggers if the image failed the _validate_file_hash.
                     if image in self._duplicate_images:
                         continue
 
+                    # Try to move picture A into dir; dir has pic A already (so we will call it pic B). We compare the has of pic A to pic B.
+                    # if the has of pic A and pic B match; we should skip moving pic A entirely.
                     _image_output: str = _output_dir.joinpath(image.name).as_posix()
                     # file hash comparison => open(file), "rb" = read binary , read file and digest = hash results
                     file2hash: str = hashlib.sha256(open(_image_output, "rb").read()).hexdigest()
-
                     if cur_image_hash == file2hash:
                         self._duplicate_images.append(image)
                         continue
@@ -325,6 +327,14 @@ class ImageFilter():
 
     def _delete(self, bulk: bool = False) -> None:
         """ Prompts users with a choice to delete images from `self._duplicate_images`"""
+        # TODO - Traceback (most recent call last):
+        # File "H:\VSC\Projects\ImageFilter\ImageFilterv2.py", line 403, in <module>
+        #     ImageFilter()
+        # File "H:\VSC\Projects\ImageFilter\ImageFilterv2.py", line 85, in __init__
+        #     self._delete(bulk=True)
+        # File "H:\VSC\Projects\ImageFilter\ImageFilterv2.py", line 336, in _delete
+        #     os.remove(image.as_posix())
+        # FileNotFoundError: [WinError 2] The system cannot find the file specified: 'H:/Picture/Anime/emrqx7amwu1b1.jpg'
         _confirm: str = "n"
         _exit: bool = False
         _count: int = len(self._duplicate_images)
@@ -336,7 +346,7 @@ class ImageFilter():
                 os.remove(image.as_posix())
                 continue
 
-            if _exit:
+            elif _exit:
                 break
 
             while 1:
@@ -352,7 +362,14 @@ class ImageFilter():
                 elif confirm == "y":
                     if bulk:
                         _confirm = "y"
-
+                    # TODO -
+                    # 04/30/2023 04:03:58 PM [INFO]  Moved ziqusrxwgbwa1.jpg | H:/Picture/Anime >> H:/Picture/Anime/UHDP Res
+                    # ImageFilter()
+                    # File "H:\VSC\Projects\ImageFilter\ImageFilterv2.py", line 87, in __init__
+                    #     self._delete()
+                    # File "H:\VSC\Projects\ImageFilter\ImageFilterv2.py", line 356, in _delete
+                    #     os.remove(image.as_posix())
+                    # FileNotFoundError: [WinError 2] The system cannot find the file specified: 'H:/Picture/Anime/sa5esih31wsa1.jpg'
                     os.remove(image.as_posix())
                     break
 
@@ -360,12 +377,21 @@ class ImageFilter():
                     self._logger.error("Your entry was invalid; please select between 'y/N'")
                     continue
 
-    def _validate_file_hash(self, image_dir: Path, image_hash: str, image_output_path: Path) -> None:
-        """Compares the hash of the current image against the hash of the image in the DB, also verify's the existing entry has a valid file/path. 
+    def _validate_file_hash(self, image_dir: Path, image_hash: str, image_output_path: Path) -> bool | None:
+        """Compares the hash of the current image against the hash of the image in the DB.
+         If the current image hash exists in the DB.
+            We use the existing hash and open the file path it specifies.
 
-        Hash's the existing file/path against the possible duplicate.
+            `IF the file path NO LONGER exists` we update the DB with the current image's output directory and hash then continue.
 
-        Adds the file to `self._diplicate_images` if the hash's match."""
+            `ELSE` We then re-hash the file path from the DB against the current image hash;
+
+         `IF they MATCH` we add the current image as a duplicate image and prompt deletion later.
+
+         `IF they DO NOT` match we update the file path with the current image's output directory (if it changes) and continue.
+
+         `IF` by any chance the hash of the existing file path already exists; we continue the above process of the existing image against the DB's existing image path.. etc etc..
+         """
         # need to compare the new image and the old image hashs
         # need to update the hash list if they no longer match.
         # using the "hash" that already exists as a key to get a Path(str)
@@ -374,12 +400,14 @@ class ImageFilter():
         # if the hash path is invalid; update the hash and the path entry.
         if not _existing_file.exists():
             self._temp_hash_list[image_hash] = image_output_path.as_posix()
+            return False
 
         # the file path exists; compare the old image to the new one.
         else:
             _temp_hash: str = hashlib.sha256(open(_existing_file.as_posix(), "rb").read()).hexdigest()
             if _temp_hash == image_hash:
                 self._duplicate_images.append(image_dir)
+                return True
 
             elif _temp_hash not in self._temp_hash_list:
                 # first we update our DB with the new hash and get its path using the old hash.
