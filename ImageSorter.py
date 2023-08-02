@@ -1,4 +1,4 @@
-# Image Filter
+# Image Sorter
 # By k8thekat - 4/10/2021
 
 import os
@@ -22,10 +22,10 @@ class ImageRes(TypedDict):
     dimensions: tuple[int, int]
 
 
-class ImageFilter():
+class ImageSorter:
     def __init__(self) -> None:
-        parser = ArgumentParser(description="Python Image Filter")
-        parser.add_argument("-f", help="The path to your settings.ini", required=False, type=Path)  # TODO Need to decide on action
+        parser = ArgumentParser(description="Python Image Sorter")
+        parser.add_argument("-f", help="The path to your settings.ini", required=False, type=Path)
         self._args: Namespace = parser.parse_args()
 
         logging.basicConfig(format="%(asctime)s [%(levelname)s]  %(message)s", level=logging.INFO, datefmt='%m/%d/%Y %I:%M:%S %p', handlers=[logging.StreamHandler(sys.stdout)])
@@ -60,12 +60,16 @@ class ImageFilter():
             "_sort_recursive": "Would you like the search to recursive? 'y/N' (default: N): ",
             "_hash_pictures": "Would you like to check for duplicate images? 'y/N' (default: N): "}
 
-        # these settings will be changed via `settings.ini`
+        # these settings can be changed via `settings.ini`
         self._file_types: tuple[str, ...] = (".png", ".jpg", ".webp", ".jpeg")
         self._ignore_directories: list[str] | str = ["Low Res", "Mid Res", "High Res", "UHD Res", "Phone Res", "UHDP Res", "Wallpapers"]
         self._scale_factor: float = 1.3
 
         self._use_default: bool = True  # default to prompts always..
+
+    def start(self) -> None:
+        """Call to loading settings and start sorting.
+        """
         if self._args.f:
             self._load_settings()
 
@@ -106,10 +110,10 @@ class ImageFilter():
             self._destination_dir = Path(settings.get("DIRECTORIES", "DESTINATION"))
             # need to validate SOURCE and DESTINATION
             if not self._source_dir.exists():
-                self._logger.error("The SOURCE path you provided is not valid.")
+                self._logger.error(f"The SOURCE path you provided is not valid. -> {self._source_dir}")
                 sys.exit(1)
             if not self._destination_dir.exists():
-                self._logger.error("The DESTINATION path you provided is not valid.")
+                self._logger.error(f"The DESTINATION path you provided is not valid. -> {self._destination_dir}")
                 sys.exit(1)
 
             # wallpapers
@@ -312,7 +316,7 @@ class ImageFilter():
 
     def _hash_database_save(self) -> None:
         """Hash List Save"""
-        temp_file: TextIOWrapper = open(self._hash_file, 'w')  # w = overwrite
+        temp_file: TextIOWrapper = open(self._hash_file, "w")  # w = overwrite
         # saves my hash list to a new file with each entry spaced out by a new line.
         try:
             json.dump(self._temp_hash_list, temp_file, indent="\n")
@@ -327,14 +331,6 @@ class ImageFilter():
 
     def _delete(self, bulk: bool = False) -> None:
         """ Prompts users with a choice to delete images from `self._duplicate_images`"""
-        # TODO - Traceback (most recent call last):
-        # File "H:\VSC\Projects\ImageFilter\ImageFilterv2.py", line 403, in <module>
-        #     ImageFilter()
-        # File "H:\VSC\Projects\ImageFilter\ImageFilterv2.py", line 85, in __init__
-        #     self._delete(bulk=True)
-        # File "H:\VSC\Projects\ImageFilter\ImageFilterv2.py", line 336, in _delete
-        #     os.remove(image.as_posix())
-        # FileNotFoundError: [WinError 2] The system cannot find the file specified: 'H:/Picture/Anime/emrqx7amwu1b1.jpg'
         _confirm: str = "n"
         _exit: bool = False
         _count: int = len(self._duplicate_images)
@@ -362,14 +358,6 @@ class ImageFilter():
                 elif confirm == "y":
                     if bulk:
                         _confirm = "y"
-                    # TODO -
-                    # 04/30/2023 04:03:58 PM [INFO]  Moved ziqusrxwgbwa1.jpg | H:/Picture/Anime >> H:/Picture/Anime/UHDP Res
-                    # ImageFilter()
-                    # File "H:\VSC\Projects\ImageFilter\ImageFilterv2.py", line 87, in __init__
-                    #     self._delete()
-                    # File "H:\VSC\Projects\ImageFilter\ImageFilterv2.py", line 356, in _delete
-                    #     os.remove(image.as_posix())
-                    # FileNotFoundError: [WinError 2] The system cannot find the file specified: 'H:/Picture/Anime/sa5esih31wsa1.jpg'
                     os.remove(image.as_posix())
                     break
 
@@ -421,4 +409,4 @@ class ImageFilter():
 
 
 if __name__ == "__main__":
-    ImageFilter()
+    ImageSorter().start()
