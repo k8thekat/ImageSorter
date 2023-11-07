@@ -1,8 +1,6 @@
-from multiprocessing import Value
 from PIL.Image import Image as IMG
 from PIL.Image import Resampling
-from PIL import Image, ImageFilter
-
+from PIL import ImageFilter
 import time
 
 
