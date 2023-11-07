@@ -193,12 +193,3 @@ class Image_Comparison:
             etime = (time.time() - stime)
             print(f"Time taken {'{:.2f}'.format(etime)} seconds")
             return False
-
-
-images: list[IMG] = []
-jpg = "Test/Wallpapers/3cqc4230bhsa1.jpg"
-img: IMG = Image.open(jpg)
-
-a = Image_Comparison()
-res = a.compare(source=img, comparison=img)
-print(res)
