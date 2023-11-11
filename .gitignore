@@ -4,5 +4,6 @@
 *.json
 imagefilter.json
 /Test
-
+local.py
 settings.ini
+__pycache__

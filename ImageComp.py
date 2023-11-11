@@ -2,25 +2,39 @@ from PIL.Image import Image as IMG
 from PIL.Image import Resampling
 from PIL import ImageFilter
 import time
+from typing import Union
 
 
 class Image_Comparison:
-    def __init__(self):
-        self._match_threshold: int = 80  # This is a percentage base match, results must be this or higher.
+    def __init__(self) -> None:
+        self._match_percent: int = 90  # This is a percentage base match, results must be this or higher.
         self._line_detect: int = 128  # This is the 0-255 value we use to determine if the pixel is a "line"
-        self._results_array: list[bool] = []
+        self._sample_percent: int = 10  # This is the % of edge cords to use for comparsion.
 
-    def set_match_threshold(self, percent: int = 80) -> None:
+    @property
+    def results(self) -> str:
+        """
+        Get the recent results from `compare()` showing the time taken and the percentage of a match.
+
+        Returns:
+            str: Results of recent compare
+        """
+        return f"Time taken {'{:.2f}'.format(self._etime)} seconds, with a {self._p_match}% match."
+
+    def set_match_percent(self, percent: int = 80) -> None:
         """
         Sets the percentage required of match's to be considered a duplicate.
 
 
         Args:
             percent (int): 0-100 Percent value. Defaults to 80.
+
+        Raises:
+            ValueError: Value out of bounds.
         """
         if percent > 100 or percent < 0:
             raise ValueError("You must provide a value no greater than 100 and no less than 0.")
-        self._match_threshold = percent
+        self._match_percent = percent
 
     def set_line_detect(self, line_value: int = 128) -> None:
         """
@@ -29,10 +43,28 @@ class Image_Comparison:
 
         Args:
             line_value (int): 0-255 Pixel value. Defaults to 128.
+
+        Raises:
+            ValueError: Value out of bounds.
         """
         if line_value > 255 or line_value < 0:
             raise ValueError("You must provide a value no greater than 255 and no less than 0.")
         self._line_detect = line_value
+
+    def set_sample_percent(self, percent: int = 10) -> None:
+        """
+        Sets the percentage of Edge (X,Y) cords to use when comparing images. Images will have 10000+/- edges found.\n
+        eg. `(10000 * .01) = 100` points checked.
+
+        Args:
+            percent (float, optional): 0-1 Percent value. Defaults to .01.
+
+        Raises:
+            ValueError: Value out of bounds.
+        """
+        if percent > 100 or percent < 0:
+            raise ValueError("You must provide a value no greater than 100 and no less than 0.")
+        self._sample_percent = percent
 
     def _convert(self, image: IMG) -> IMG:
         """
@@ -69,7 +101,7 @@ class Image_Comparison:
 
         Args:
             source (IMG): PIL Image
-            comparison (IMG): PIL Image
+            comparison (IMG): PIL Image, the image to scale down.
             sampling (_type_, optional): PIL Resampling. Defaults to Resampling.BICUBIC.
             scale_percent (int, optional): The percentage to resize the image. Defaults to 50.
 
@@ -82,28 +114,26 @@ class Image_Comparison:
         comparison = comparison.resize((dimensions[0], dimensions[1]), resample=sampling)
         return source, comparison
 
-    def _edge_detect(self, source: IMG, comparison: IMG) -> None:
+    def _edge_detect(self, image: IMG) -> Union[None, list[tuple[int, int]]]:
         """
         Iterates from 0,0 looking for a pixel value above or equl to our `_line_detect` value. 
 
-        When value high enough has been found; we use the (X,Y) cords from the source image and call `_pixel_comparison`.
+        When a pixel value high enough has been found it is added to our array.
 
         Args:
-            source (IMG): PIL Image
-            comparison (IMG): PIL Image
+            image (IMG): PIL Image
 
         Returns:
-            _type_: None
+            list(tuple(int, int)): List of (X,Y) cords.
         """
-        for y in range(0, source.height):
-            for x in range(0, source.width):
-                pixel = source.getpixel((x, y))
+        edges: list[tuple[int, int]] = []
+        for y in range(0, image.height):
+            for x in range(0, image.width):
+                pixel: int = image.getpixel((x, y))
                 if pixel >= self._line_detect:
-                    if isinstance(comparison, IMG):
-                        res = self._pixel_comparison(image=comparison, cords=(x, y))
-                        self._results_array.append(res)
+                    edges.append((x, y))
 
-        return None
+        return edges
 
     def _pixel_comparison(self, image: IMG, cords: tuple[int, int]) -> bool:
         """
@@ -122,11 +152,11 @@ class Image_Comparison:
             raise ValueError(f"You provided a X value that is out of bounds. Value: {cords[0]} - Limit: {image.width}")
         if cords[1] > image.height or cords[1] < 0:
             raise ValueError(f"You provided a Y value that is out of bounds. Value: {cords[1]} - Limit: {image.height}")
-        res = image.getpixel(cords)
+        res: int = image.getpixel(cords)
         if isinstance(res, int):
             if res >= self._line_detect:
                 return True
-            return self._pixel_nearmatch(image=image, cords=cords)
+
         return False
 
     def _pixel_nearmatch(self, image: IMG, cords: tuple[int, int], distance: int = 3) -> bool:
@@ -151,7 +181,7 @@ class Image_Comparison:
                 if res_x >= image.width or res_x < 0:
                     continue
 
-                res = image.getpixel((res_x, res_y))
+                res: int = image.getpixel((res_x, res_y))
                 if isinstance(res, int) and res >= self._line_detect:
                     return True
 
@@ -168,7 +198,10 @@ class Image_Comparison:
         Returns:
             bool: True if the resulting image has enough matches over our `_match_threshold`
         """
-        stime = time.time()
+        results_array: list[bool] = []
+        stime: float = time.time()
+        match: bool = False
+
         # We need to convert both images to GrayScale and run PIL Find Edges filter.
         source = self._convert(image=source)
         source = self._filter(image=source)
@@ -178,16 +211,29 @@ class Image_Comparison:
         # We need to make our source and comparison image match resolutions.
         # We also scale them down to help processing speed.
         source, comparison = self._image_resize(source=source, comparison=comparison)
-        self._edge_detect(source=source, comparison=comparison)
+
+        # We find all our edges, append any matches above our pixel threshold; otherwise we attempt to do a near match search.
+        # After we have looked at both options; we append our bool result into our array and decide if the matches are above the threshold.
+        edges: list[tuple[int, int]] | None = self._edge_detect(image=source)
+        if edges is None:
+            return False
+
+        step: int = int(len(edges) / ((len(edges)) * (self._sample_percent / 100)))
+        for pixel in range(0, len(edges), step):
+            res: bool = self._pixel_comparison(image=comparison, cords=edges[pixel])
+            if res == False:
+                res: bool = self._pixel_nearmatch(image=comparison, cords=edges[pixel])
+            results_array.append(res)
+
         counter = 0
-        for entry in self._results_array:
+        for entry in results_array:
             if entry == True:
                 counter += 1
-        if counter >= len(self._results_array) * (self._match_threshold / 100):
-            etime = (time.time() - stime)
-            print(f"Time taken {'{:.2f}'.format(etime)} seconds")
-            return True
+        self._p_match = int((counter / len(results_array)) * 100)
+        if self._p_match >= self._match_percent:
+            match = True
         else:
-            etime = (time.time() - stime)
-            print(f"Time taken {'{:.2f}'.format(etime)} seconds")
-            return False
+            match = False
+
+        self._etime: float = (time.time() - stime)
+        return match
