@@ -21,7 +21,7 @@ class Image_Comparison:
         """
         return f"Time taken {'{:.2f}'.format(self._etime)} seconds, with a {self._p_match}% match."
 
-    def set_match_percent(self, percent: int = 80) -> None:
+    def set_match_percent(self, percent: int = 90) -> None:
         """
         Sets the percentage required of match's to be considered a duplicate.
 
