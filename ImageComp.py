@@ -87,10 +87,10 @@ class Image_Comparison:
 
         Args:
             image (IMG): PIL Image
-            filter (_type_, optional): PIL Image Filter. Defaults to ImageFilter.FIND_EDGES.
+            filter (ImageFilter, optional): PIL Image Filter. Defaults to ImageFilter.FIND_EDGES.
 
         Returns:
-            IMG: _description_
+            IMG: Filtered PIL Image
         """
         return image.filter(filter=filter)
 
@@ -102,7 +102,7 @@ class Image_Comparison:
         Args:
             source (IMG): PIL Image
             comparison (IMG): PIL Image, the image to scale down.
-            sampling (_type_, optional): PIL Resampling. Defaults to Resampling.BICUBIC.
+            sampling (Resampling, optional): PIL Resampling. Defaults to Resampling.BICUBIC.
             scale_percent (int, optional): The percentage to resize the image. Defaults to 50.
 
         Returns:
