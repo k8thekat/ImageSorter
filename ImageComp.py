@@ -7,9 +7,18 @@ from typing import Union
 
 class Image_Comparison:
     def __init__(self) -> None:
-        self._match_percent: int = 90  # This is a percentage base match, results must be this or higher.
-        self._line_detect: int = 128  # This is the 0-255 value we use to determine if the pixel is a "line"
-        self._sample_percent: int = 10  # This is the % of edge cords to use for comparsion.
+        """
+        Properties:
+            _match_percent (int) : This is the percentage base match value, results must be this or higher. Defaults to 90%
+            _line_detect (int) : This is the 0-255 value we use to determine if the pixel is a "line". Defaults to 128
+            _sample_percent (int) : This is the % of edge cords to use for comparsion. Defaults to 10%
+            _sample_dimensions (tuple[int, int]) : This is the default resolution to scale all images down to (or up). Defaults to (500, 500)
+
+        """
+        self._match_percent: int = 90
+        self._line_detect: int = 128
+        self._sample_percent: int = 10
+        self._sample_dimensions: tuple[int, int] = (500, 500)
 
     @property
     def results(self) -> str:
@@ -17,9 +26,49 @@ class Image_Comparison:
         Get the recent results from `compare()` showing the time taken and the percentage of a match.
 
         Returns:
-            str: Results of recent compare
+            str: Results of recent compare.
         """
         return f"Time taken {'{:.2f}'.format(self._etime)} seconds, with a {self._p_match}% match."
+
+    @property
+    def match_percent(self) -> int:
+        """
+        This is the percentage base match value, results must be this or higher. Defaults to 90%
+
+        Returns:
+            int: The `_match_percent` value.
+        """
+        return self._match_percent
+
+    @property
+    def line_detect(self) -> int:
+        """
+        This is the 0-255 value we use to determine if the pixel is a "line". Defaults to 128
+
+        Returns:
+            int: The `_line_detect` value.
+        """
+        return self._line_detect
+
+    @property
+    def sample_percent(self) -> int:
+        """
+        This is the % of edge cords to use for comparsion. Defaults to 10%
+
+        Returns:
+            int: The `_sample_percent` value.
+        """
+        return self._sample_percent
+
+    @property
+    def sample_dimensions(self) -> tuple[int, int]:
+        """
+        This is the default resolution to scale all images down to (or up). Defaults to (500, 500)
+
+        Returns:
+            tuple[int, int]: The `_sample_dimensions` value.
+        """
+        return self._sample_dimensions
 
     def set_match_percent(self, percent: int = 90) -> None:
         """
@@ -66,6 +115,22 @@ class Image_Comparison:
             raise ValueError("You must provide a value no greater than 100 and no less than 0.")
         self._sample_percent = percent
 
+    def set_sample_resolution(self, dimensions: tuple[int, int] = (500, 500)) -> None:
+        """
+        Set the image dimensions to scale down images for like comparisons and pixel edge detection. \n
+        `**Recommend**` A lower resolution to speed the process and by using a fixed dimension value all images will line up when doing array comparisons.
+
+        Args:
+            dimensions (tuple[int, int], optional): _description_. Defaults to (500, 500).
+
+        Raises:
+            ValueError: Value out of bounds.
+        """
+        for value in dimensions:
+            if value < 0:
+                raise ValueError("You must provide a value greater than 0.")
+        self._sample_dimensions = dimensions
+
     def _convert(self, image: IMG) -> IMG:
         """
         Convert's the image to Grayscale `("L")` mode.
@@ -94,7 +159,7 @@ class Image_Comparison:
         """
         return image.filter(filter=filter)
 
-    def _image_resize(self, source: IMG, comparison: IMG, sampling=Resampling.BICUBIC, scale_percent: int = 50) -> tuple[IMG, IMG]:
+    def _image_resize(self, source: IMG, comparison: IMG, sampling=Resampling.BICUBIC, scale_percent: int = 50, image_size: Union[None, tuple[int, int]] = (500, 500)) -> tuple[IMG, IMG]:
         """
         Resizes the source image and resizes the comparison image to the same resolution as the source.\n
         `**THIS MUST BE RUN AFTER _filter**`
@@ -104,14 +169,18 @@ class Image_Comparison:
             comparison (IMG): PIL Image, the image to scale down.
             sampling (Resampling, optional): PIL Resampling. Defaults to Resampling.BICUBIC.
             scale_percent (int, optional): The percentage to resize the image. Defaults to 50.
+            image_size (Union(tuple[int, int], None)): The dimensions to scale the image down (or up) to, set to `None` to use source image dimensions. Defaults to (500,500).
 
         Returns:
             tuple[IMG, IMG]: Resized PIL Images
         """
+        if image_size is None:
+            dimensions: tuple[int, int] = (int(source.height * (scale_percent / 100)), int(source.width * (scale_percent / 100)))
+        else:
+            dimensions = image_size
 
-        dimensions: tuple[int, int] = (int(source.height * (scale_percent / 100)), int(source.width * (scale_percent / 100)))
-        source = source.resize((dimensions[0], dimensions[1]), resample=sampling)
-        comparison = comparison.resize((dimensions[0], dimensions[1]), resample=sampling)
+        source = source.resize(size=dimensions, resample=sampling)
+        comparison = comparison.resize(size=dimensions, resample=sampling)
         return source, comparison
 
     def _edge_detect(self, image: IMG) -> Union[None, list[tuple[int, int]]]:
