@@ -162,14 +162,14 @@ class Image_Comparison:
     def _image_resize(self, source: IMG, comparison: IMG, sampling=Resampling.BICUBIC, scale_percent: int = 50, image_size: Union[None, tuple[int, int]] = (500, 500)) -> tuple[IMG, IMG]:
         """
         Resizes the source image and resizes the comparison image to the same resolution as the source.\n
-        `**THIS MUST BE RUN AFTER _filter**`
+        `**THIS MUST BE BEFORE  _filter or it will saturate the white.**`
 
         Args:
             source (IMG): PIL Image
             comparison (IMG): PIL Image, the image to scale down.
             sampling (Resampling, optional): PIL Resampling. Defaults to Resampling.BICUBIC.
             scale_percent (int, optional): The percentage to resize the image. Defaults to 50.
-            image_size (Union(tuple[int, int], None)): The dimensions to scale the image down (or up) to, set to `None` to use source image dimensions. Defaults to (500,500).
+            image_size (Union(tuple[int, int], None), optional): The dimensions to scale the image down (or up) to, set to `None` to use source image dimensions. Defaults to (500,500).
 
         Returns:
             tuple[IMG, IMG]: Resized PIL Images
@@ -256,13 +256,14 @@ class Image_Comparison:
 
         return False
 
-    def compare(self, source: IMG, comparison: IMG) -> bool:
+    def compare(self, source: IMG, comparison: IMG, resize_dimensions: Union[None, tuple[int, int]] = (500, 500)) -> bool:
         """
         Automates the edge detection of our source image against our comparison image to see if the images are "similar"
 
         Args:
             source (IMG): PIL Image
             comparison (IMG): PIL Image
+            resize_dimensions (Union(tuple[int, int], None), optional)): The dimensions to scale the image down (or up) to, set to `None` to use source image dimensions. Defaults to (500,500).
 
         Returns:
             bool: True if the resulting image has enough matches over our `_match_threshold`
@@ -273,13 +274,13 @@ class Image_Comparison:
 
         # We need to convert both images to GrayScale and run PIL Find Edges filter.
         source = self._convert(image=source)
-        source = self._filter(image=source)
         comparison = self._convert(image=comparison)
-        comparison = self._filter(image=comparison)
 
         # We need to make our source and comparison image match resolutions.
         # We also scale them down to help processing speed.
-        source, comparison = self._image_resize(source=source, comparison=comparison)
+        source, comparison = self._image_resize(source=source, comparison=comparison, image_size=resize_dimensions)
+        source = self._filter(image=source)
+        comparison = self._filter(image=comparison)
 
         # We find all our edges, append any matches above our pixel threshold; otherwise we attempt to do a near match search.
         # After we have looked at both options; we append our bool result into our array and decide if the matches are above the threshold.
