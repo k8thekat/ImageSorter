@@ -7,3 +7,5 @@ imagefilter.json
 local.py
 settings.ini
 __pycache__
+*.bin
+
