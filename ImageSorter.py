@@ -1,18 +1,19 @@
 # Image Sorter
 # By k8thekat - 4/10/2021
 
-import os
-from PIL import Image
 import hashlib
-import shutil
 import json
-from pathlib import Path
-from io import TextIOWrapper
 import logging
-from typing import Union, TypedDict, Generator
-from configparser import ConfigParser
-from argparse import ArgumentParser, Namespace
+import os
+import shutil
 import sys
+from argparse import ArgumentParser, Namespace
+from configparser import ConfigParser
+from io import TextIOWrapper
+from pathlib import Path
+from typing import Generator, TypedDict, Union
+
+from PIL import Image
 
 
 class ImageRes(TypedDict):
@@ -56,7 +57,7 @@ class ImageSorter:
         self._sort_recursive: bool = False
         self._hash_pictures: bool = False
         self._settings: dict[str, str] = {
-            "_sort_wallpapers": "Would you like to seperate Wallpaper sized pictures into their own folder? 'y/N' (default: N): ",
+            "_sort_wallpapers": "Would you like to separate Wallpaper sized pictures into their own folder? 'y/N' (default: N): ",
             "_sort_recursive": "Would you like the search to recursive? 'y/N' (default: N): ",
             "_hash_pictures": "Would you like to check for duplicate images? 'y/N' (default: N): "}
 
@@ -99,7 +100,7 @@ class ImageSorter:
         If successful; sets `self._use_default = False`"""
         self._setting_file: Path = Path(self._args.f)
 
-        # this check does two things; verifys the path exists and the file exists.
+        # this check does two things; verify the path exists and the file exists.
         if self._setting_file.is_file():
             # open config file
             settings = ConfigParser(converters={"list": lambda setting: [value.strip() for value in setting.split(",")]})
@@ -150,7 +151,7 @@ class ImageSorter:
                     self._logger.error("Directory does not exist; please re-enter.")
 
     def _user_settings_prompts(self) -> None:
-        """Prompts configuration choices to determin how to sort.
+        """Prompts configuration choices to determine how to sort.
 
         `self._sort_wallpapers: bool = False`
         `self._sort_recursive: bool = False`
@@ -283,15 +284,22 @@ class ImageSorter:
                         _file_output: str = _output_dir.as_posix() + "/" + image.stem + "_" + str(_num_increment) + image.suffix
                         while (Path(_file_output).exists()):
                             _num_increment += 1
-
-                        new_image: Path = image.rename(_file_output)
-                        self._logger.warning("Duplicate file name found at " + _image_output + " --> Renaming file..." + new_image.name)
+                        try:
+                            new_image: Path = image.rename(_file_output)
+                            self._logger.warning(msg="Duplicate file name found at " + _image_output + " --> Renaming file..." + new_image.name)
+                        except OSError as e:
+                            self._logger.error(msg=f"We encountered an error renaming {image.name} | Exception: {e}")
+                            continue
                         # shutil.move(self._source_dir.as_posix() + file.name, fileoutname[0:dotloc] + str(filenum) + fileoutname[dotloc:])
                 else:
                     self._logger.error(f"We encountered an error moving {image.name} | Exception: {e}")
 
             except PermissionError as e:
                 self._logger.error(f"We encountered a Permissions Error when moving {image.name} | Exception: {e}")
+
+            except OSError as e:
+                self._logger.error(msg="We encountered an error moving " + image.name + f" | Exception: {e}")
+                continue
 
     def _hash_database_load(self) -> None:
         """Loads our `hashdatabase.json` if it exists; otherwise creates the file in the current working directory."""

@@ -1,17 +1,22 @@
-from PIL.Image import Image as IMG
-from PIL.Image import Resampling
-from PIL import ImageFilter
 import time
 from typing import Union
 
+from PIL import ImageFilter
+from PIL.Image import Image as IMG
+from PIL.Image import Resampling
+
 
 class Image_Comparison:
+    """
+    Compares two images via PIL Edge detect method. Store's (X,Y) cords of each pixel above `self._line_detect` value and checks the comparison image at the same cords for an edge.
+    """
+
     def __init__(self) -> None:
         """
         Properties:
             _match_percent (int) : This is the percentage base match value, results must be this or higher. Defaults to 90%
             _line_detect (int) : This is the 0-255 value we use to determine if the pixel is a "line". Defaults to 128
-            _sample_percent (int) : This is the % of edge cords to use for comparsion. Defaults to 10%
+            _sample_percent (int) : This is the % of edge cords to use for comparison. Defaults to 10%
             _sample_dimensions (tuple[int, int]) : This is the default resolution to scale all images down to (or up). Defaults to (500, 500)
 
         """
@@ -53,7 +58,7 @@ class Image_Comparison:
     @property
     def sample_percent(self) -> int:
         """
-        This is the % of edge cords to use for comparsion. Defaults to 10%
+        This is the % of edge cords to use for comparison. Defaults to 10%
 
         Returns:
             int: The `_sample_percent` value.
@@ -216,7 +221,7 @@ class Image_Comparison:
 
         Args:
             image (IMG): PIL Image
-            cords (tuple[int, int]): X,Y cordinates.
+            cords (tuple[int, int]): X,Y coordinates.
 
         Returns:
             bool: True if the pixel value is higher than our `_line_detect` value else False.
@@ -238,7 +243,7 @@ class Image_Comparison:
 
         Args:
             image (IMG): PIL Image
-            cords (tuple[int, int]): X,Y cordinates.
+            cords (tuple[int, int]): X,Y coordinates.
             distance (int, optional): Radius from (X,Y). Defaults to 3.
 
         Returns:
